@@ -1,0 +1,10 @@
+# WeeWX AirVisual Extension Manifest
+install.py
+bin/user/airvisual.py
+README.md
+LICENSE
+CHANGELOG.md
+examples/weewx.conf.example
+docs/installation.md
+docs/configuration.md
+docs/troubleshooting.md

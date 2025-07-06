@@ -1,0 +1,36 @@
+# WeeWX AirVisual Extension Configuration Example
+
+[Station]
+    # These coordinates are used by the AirVisual service
+    latitude = 33.656915
+    longitude = -117.982542
+    # ... other station settings ...
+
+[AirVisualService]
+    # Enable/disable the service
+    enable = true
+    
+    # Your IQ Air API key (get free key at https://dashboard.iqair.com/)
+    api_key = YOUR_API_KEY_HERE
+    
+    # Data collection interval in seconds (default: 600 = 10 minutes)
+    # Minimum recommended: 600 seconds (10 minutes)
+    # API quota: 10,000 calls/month (about 1 call every 4.3 minutes max)
+    interval = 600
+    
+    # HTTP request timeout in seconds
+    timeout = 30
+    
+    # Logging options
+    log_success = false
+    log_errors = true
+    
+    # Exponential backoff retry configuration
+    retry_wait_base = 600      # Start with 10 minutes
+    retry_wait_max = 21600     # Max 6 hours between retries
+    retry_multiplier = 2.0     # Double wait time each failure
+
+[Engine]
+    [[Services]]
+        # Add AirVisual service to data_services list
+        data_services = user.airvisual.AirVisualService, weewx.engine.StdConvert, weewx.engine.StdCalibrate, weewx.engine.StdQC
