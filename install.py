@@ -1,4 +1,4 @@
-    #!/usr/bin/env python3
+#!/usr/bin/env python3
 
 """
 WeeWX AirVisual Extension Installer - CORRECTED VERSION
@@ -44,6 +44,16 @@ class AirVisualInstaller(object):
     def get(self, key, default=None):
         """Dictionary-like access to metadata."""
         return getattr(self, key, default)
+    
+    def __contains__(self, key):
+        """Support 'in' operator for checking if key exists."""
+        return hasattr(self, key)
+    
+    def __getitem__(self, key):
+        """Support bracket notation access."""
+        if hasattr(self, key):
+            return getattr(self, key)
+        raise KeyError(key)
     
     def install(self, engine):
         """Install the AirVisual extension."""
