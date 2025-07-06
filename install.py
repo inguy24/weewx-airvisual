@@ -1,18 +1,13 @@
-#!/usr/bin/env python3
+    #!/usr/bin/env python3
 
 """
-WeeWX AirVisual Extension Installer - Phase 5 Complete
+WeeWX AirVisual Extension Installer - CORRECTED VERSION
 
 This installer sets up the AirVisual service extension for WeeWX,
 including database schema updates, configuration modifications,
 and service registration with proper database field management.
 
-Key Improvements:
-- Checks for existing database fields before attempting to add them
-- Uses weectl database add-column commands for proper schema management  
-- Handles existing fields gracefully without errors
-- Provides detailed feedback on what was done vs skipped
-- Full error handling and rollback capabilities
+FIXED: Proper WeeWX extension interface with dictionary metadata
 """
 
 import configobj
@@ -28,17 +23,27 @@ EXTENSION_VERSION = '1.0.0'
 EXTENSION_DESCRIPTION = 'Air quality data from IQ Air AirVisual API'
 
 def loader():
+    """Return installer object with metadata attributes."""
     return AirVisualInstaller()
 
 class AirVisualInstaller(object):
     """WeeWX extension installer for AirVisual service with proper database management."""
     
     def __init__(self):
+        # Extension metadata (required for WeeWX)
+        self.name = EXTENSION_NAME
+        self.version = EXTENSION_VERSION
+        self.description = EXTENSION_DESCRIPTION
+        
         self.required_fields = {
             'aqi': 'REAL',
             'main_pollutant': 'VARCHAR(10)', 
             'aqi_level': 'VARCHAR(30)'
         }
+    
+    def get(self, key, default=None):
+        """Dictionary-like access to metadata."""
+        return getattr(self, key, default)
     
     def install(self, engine):
         """Install the AirVisual extension."""
@@ -394,7 +399,8 @@ def main():
                 }
             })
     
-    installer = AirVisualInstaller()
+    # Get extension metadata
+    installer = loader()
     engine = MockEngine()
     
     try:
