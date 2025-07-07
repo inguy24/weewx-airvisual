@@ -62,8 +62,8 @@ class AirVisualInstaller(ExtensionInstaller):
         
         self.required_fields = {
             'aqi': 'REAL',
-            'main_pollutant': 'VARCHAR(10)', 
-            'aqi_level': 'VARCHAR(30)'
+            'main_pollutant': 'TEXT', 
+            'aqi_level': 'TEXT'
         }
     
     def configure(self, engine):
@@ -186,6 +186,23 @@ class AirVisualInstaller(ExtensionInstaller):
             ]
             
             try:
+                # Run weectl database add-column command
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+                
+                if result.returncode == 0:
+                    print(f"    ✓ Successfully added '{field_name}'")
+                else:
+                    # Check if error is due to field already existing
+                    if 'duplicate column' in result.stderr.lower() or 'already exists' in result.stderr.lower():
+                        print(f"    ✓ Field '{field_name}' already exists")
+                    else:
+                        print(f"    ❌ Failed to add '{field_name}': {result.stderr.strip()}")
+                        raise Exception(f"weectl command failed: {result.stderr}")
+                        
+            except subprocess.TimeoutExpired:
+                raise Exception(f"Timeout adding field '{field_name}' - database may be locked")
+            except Exception as e:
+                raise Exception(f"Error adding field '{field_name}': {e}"):
                 # Run weectl database add-column command
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
                 
