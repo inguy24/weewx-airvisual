@@ -51,11 +51,6 @@ class AirVisualInstaller(ExtensionInstaller):
                     'retry_wait_base': 600,
                     'retry_wait_max': 21600,
                     'retry_multiplier': 2.0
-                },
-                'Engine': {
-                    'Services': {
-                        'data_services': 'user.airvisual.AirVisualService'
-                    }
                 }
             }
         )
@@ -130,8 +125,8 @@ class AirVisualInstaller(ExtensionInstaller):
             print(f"\n❌ Error during database schema management: {e}")
             print("Installation will continue, but you may need to manually add database fields:")
             print("   weectl database add-column aqi --type 'REAL'")
-            print("   weectl database add-column main_pollutant --type 'VARCHAR(10)'")
-            print("   weectl database add-column aqi_level --type 'VARCHAR(30)'")
+            print("   weectl database add-column main_pollutant --type 'TEXT'")
+            print("   weectl database add-column aqi_level --type 'TEXT'")
     
     def _check_existing_fields(self, config_dict, db_binding):
         """Check which required fields already exist in the database."""
@@ -186,23 +181,6 @@ class AirVisualInstaller(ExtensionInstaller):
             ]
             
             try:
-                # Run weectl database add-column command
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-                
-                if result.returncode == 0:
-                    print(f"    ✓ Successfully added '{field_name}'")
-                else:
-                    # Check if error is due to field already existing
-                    if 'duplicate column' in result.stderr.lower() or 'already exists' in result.stderr.lower():
-                        print(f"    ✓ Field '{field_name}' already exists")
-                    else:
-                        print(f"    ❌ Failed to add '{field_name}': {result.stderr.strip()}")
-                        raise Exception(f"weectl command failed: {result.stderr}")
-                        
-            except subprocess.TimeoutExpired:
-                raise Exception(f"Timeout adding field '{field_name}' - database may be locked")
-            except Exception as e:
-                raise Exception(f"Error adding field '{field_name}': {e}")
                 # Run weectl database add-column command
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
                 
@@ -299,6 +277,41 @@ class AirVisualInstaller(ExtensionInstaller):
         print(f"  ✓ Update interval: {interval} seconds ({interval//60} minutes)")
         print(f"  ✓ Retry logic: exponential backoff with indefinite retries")
     
+    def _register_service(self, config_dict):
+        """Register AirVisual service in the WeeWX engine."""
+        print("\n" + "="*60)
+        print("SERVICE REGISTRATION")
+        print("="*60)
+        print("Registering service in WeeWX engine...")
+        
+        # Ensure Engine section exists
+        if 'Engine' not in config_dict:
+            config_dict['Engine'] = {}
+        if 'Services' not in config_dict['Engine']:
+            config_dict['Engine']['Services'] = {}
+        
+        # Get current data_services list
+        services = config_dict['Engine']['Services']
+        current_data_services = services.get('data_services', '')
+        
+        # Convert to list for manipulation
+        if isinstance(current_data_services, str):
+            data_services_list = [s.strip() for s in current_data_services.split(',') if s.strip()]
+        else:
+            data_services_list = list(current_data_services) if current_data_services else []
+        
+        # Add our service if not already present
+        airvisual_service = 'user.airvisual.AirVisualService'
+        if airvisual_service not in data_services_list:
+            # Add to the end of data_services list
+            data_services_list.append(airvisual_service)
+            
+            # Update configuration
+            services['data_services'] = ', '.join(data_services_list)
+            print(f"  ✓ Added {airvisual_service} to data_services")
+        else:
+            print(f"  ✓ {airvisual_service} already registered")
+    
     def _prompt_for_api_key(self):
         """Prompt user for IQ Air API key."""
         print("\n" + "-"*40)
@@ -354,41 +367,6 @@ class AirVisualInstaller(ExtensionInstaller):
                 
             except ValueError:
                 print("Please enter a valid number of minutes.")
-    
-    def _register_service(self, config_dict):
-        """Register AirVisual service in the WeeWX engine."""
-        print("\n" + "="*60)
-        print("SERVICE REGISTRATION")
-        print("="*60)
-        print("Registering service in WeeWX engine...")
-        
-        # Ensure Engine section exists
-        if 'Engine' not in config_dict:
-            config_dict['Engine'] = {}
-        if 'Services' not in config_dict['Engine']:
-            config_dict['Engine']['Services'] = {}
-        
-        # Get current data_services list
-        services = config_dict['Engine']['Services']
-        current_data_services = services.get('data_services', '')
-        
-        # Convert to list for manipulation
-        if isinstance(current_data_services, str):
-            data_services_list = [s.strip() for s in current_data_services.split(',') if s.strip()]
-        else:
-            data_services_list = list(current_data_services) if current_data_services else []
-        
-        # Add our service if not already present
-        airvisual_service = 'user.airvisual.AirVisualService'
-        if airvisual_service not in data_services_list:
-            # Add to the end of data_services list
-            data_services_list.append(airvisual_service)
-            
-            # Update configuration
-            services['data_services'] = ', '.join(data_services_list)
-            print(f"  ✓ Added {airvisual_service} to data_services")
-        else:
-            print(f"  ✓ {airvisual_service} already registered")
 
 
 def main():
