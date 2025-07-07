@@ -1,33 +1,4 @@
-def _add_missing_fields(self, config_dict, db_binding, missing_fields):
-        """Add missing fields to the database using weectl database add-column."""
-        
-        # Find weectl executable
-        weectl_path = self._find_weectl()
-        if not weectl_path:
-            raise Exception("Could not find weectl executable. Please add fields manually.")
-        
-        # Get config file path
-        config_path = getattr(config_dict, 'filename', '/etc/weewx/weewx.conf')
-        
-        for field_name in missing_fields:
-            field_type = self.required_fields[field_name]
-            
-            print(f"  Adding field '{field_name}' ({field_type})...")
-            
-            # Build weectl command - only add --type for REAL/INTEGER
-            cmd = [
-                weectl_path, 'database', 'add-column', field_name,
-                '--config', config_path,
-                '--binding', db_binding,
-                '-y'  # Don't prompt for confirmation
-            ]
-            
-            # Only add --type for supported command-line types
-            if field_type in ['REAL', 'INTEGER', 'real', 'integer', 'int']:
-                cmd.insert(-3, '--type')  # Insert before --config
-                cmd.insert(-3, field_type)
-            
-            try#!/usr/bin/env python3
+#!/usr/bin/env python3
 
 """
 WeeWX AirVisual Extension Installer - CORRECTED for WeeWX 5.1
@@ -154,8 +125,8 @@ class AirVisualInstaller(ExtensionInstaller):
             print(f"\n❌ Error during database schema management: {e}")
             print("Installation will continue, but you may need to manually add database fields:")
             print("   weectl database add-column aqi --type 'REAL'")
-            print("   weectl database add-column main_pollutant --type 'TEXT'")
-            print("   weectl database add-column aqi_level --type 'TEXT'")
+            print("   weectl database add-column main_pollutant")
+            print("   weectl database add-column aqi_level")
     
     def _check_existing_fields(self, config_dict, db_binding):
         """Check which required fields already exist in the database."""
