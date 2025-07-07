@@ -79,6 +79,9 @@ class AirVisualInstaller(ExtensionInstaller):
         # Configure the service interactively
         self._configure_service_interactive(config_dict)
         
+        # Register service in Engine services
+        self._register_service(config_dict)
+        
         # Setup unit system
         self._setup_unit_system()
         
@@ -334,6 +337,41 @@ class AirVisualInstaller(ExtensionInstaller):
                 
             except ValueError:
                 print("Please enter a valid number of minutes.")
+    
+    def _register_service(self, config_dict):
+        """Register AirVisual service in the WeeWX engine."""
+        print("\n" + "="*60)
+        print("SERVICE REGISTRATION")
+        print("="*60)
+        print("Registering service in WeeWX engine...")
+        
+        # Ensure Engine section exists
+        if 'Engine' not in config_dict:
+            config_dict['Engine'] = {}
+        if 'Services' not in config_dict['Engine']:
+            config_dict['Engine']['Services'] = {}
+        
+        # Get current data_services list
+        services = config_dict['Engine']['Services']
+        current_data_services = services.get('data_services', '')
+        
+        # Convert to list for manipulation
+        if isinstance(current_data_services, str):
+            data_services_list = [s.strip() for s in current_data_services.split(',') if s.strip()]
+        else:
+            data_services_list = list(current_data_services) if current_data_services else []
+        
+        # Add our service if not already present
+        airvisual_service = 'user.airvisual.AirVisualService'
+        if airvisual_service not in data_services_list:
+            # Add to the end of data_services list
+            data_services_list.append(airvisual_service)
+            
+            # Update configuration
+            services['data_services'] = ', '.join(data_services_list)
+            print(f"  ✓ Added {airvisual_service} to data_services")
+        else:
+            print(f"  ✓ {airvisual_service} already registered")
 
 
 def main():
