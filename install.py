@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 
 """
-WeeWX AirVisual Extension Installer - CORRECTED VERSION
+WeeWX AirVisual Extension Installer - CORRECTED for WeeWX 5.1
 
 This installer sets up the AirVisual service extension for WeeWX,
 including database schema updates, configuration modifications,
 and service registration with proper database field management.
 
-FIXED: Proper WeeWX extension interface with dictionary metadata
+Uses proper WeeWX ExtensionInstaller base class with configure method.
 """
 
 import configobj
@@ -16,6 +16,7 @@ import sys
 import subprocess
 import weewx.manager
 import weedb
+from weecfg.extension import ExtensionInstaller
 
 # WeeWX extension info
 EXTENSION_NAME = 'AirVisual'
@@ -23,17 +24,41 @@ EXTENSION_VERSION = '1.0.0'
 EXTENSION_DESCRIPTION = 'Air quality data from IQ Air AirVisual API'
 
 def loader():
-    """Return installer object with metadata attributes."""
+    """Return installer object."""
     return AirVisualInstaller()
 
-class AirVisualInstaller(object):
+class AirVisualInstaller(ExtensionInstaller):
     """WeeWX extension installer for AirVisual service with proper database management."""
     
     def __init__(self):
-        # Extension metadata (required for WeeWX)
-        self.name = EXTENSION_NAME
-        self.version = EXTENSION_VERSION
-        self.description = EXTENSION_DESCRIPTION
+        super(AirVisualInstaller, self).__init__(
+            version=EXTENSION_VERSION,
+            name=EXTENSION_NAME,
+            description=EXTENSION_DESCRIPTION,
+            author="WeeWX Community",
+            author_email="",
+            files=[
+                ('bin/user', ['bin/user/airvisual.py'])
+            ],
+            config={
+                'AirVisualService': {
+                    'enable': True,
+                    'api_key': 'REPLACE_ME',
+                    'interval': 600,
+                    'timeout': 30,
+                    'log_success': False,
+                    'log_errors': True,
+                    'retry_wait_base': 600,
+                    'retry_wait_max': 21600,
+                    'retry_multiplier': 2.0
+                },
+                'Engine': {
+                    'Services': {
+                        'data_services': 'user.airvisual.AirVisualService'
+                    }
+                }
+            }
+        )
         
         self.required_fields = {
             'aqi': 'REAL',
@@ -41,22 +66,8 @@ class AirVisualInstaller(object):
             'aqi_level': 'VARCHAR(30)'
         }
     
-    def get(self, key, default=None):
-        """Dictionary-like access to metadata."""
-        return getattr(self, key, default)
-    
-    def __contains__(self, key):
-        """Support 'in' operator for checking if key exists."""
-        return hasattr(self, key)
-    
-    def __getitem__(self, key):
-        """Support bracket notation access."""
-        if hasattr(self, key):
-            return getattr(self, key)
-        raise KeyError(key)
-    
-    def install(self, engine):
-        """Install the AirVisual extension."""
+    def configure(self, engine):
+        """Configure the extension during installation."""
         print(f"Installing {EXTENSION_NAME} extension v{EXTENSION_VERSION}")
         
         # Get configuration
@@ -65,23 +76,25 @@ class AirVisualInstaller(object):
         # Check and add database schema fields
         self._extend_database_schema(config_dict)
         
-        # Configure the service
-        self._configure_service(config_dict, engine)
+        # Configure the service interactively
+        self._configure_service_interactive(config_dict)
         
-        # Register service in engine
-        self._register_service(config_dict)
+        # Setup unit system
+        self._setup_unit_system()
         
         print("\n" + "="*60)
-        print("AirVisual extension installed successfully!")
+        print("AirVisual extension configured successfully!")
         print("="*60)
         print("\nIMPORTANT: You must restart WeeWX for changes to take effect.")
         print("   sudo systemctl restart weewx")
         print("\nThe extension will read your station coordinates from [Station]")
-        print("and collect air quality data every 10 minutes by default.")
+        print("and collect air quality data according to your configured interval.")
         print("\nNew database fields available:")
         print("   - aqi (Air Quality Index 0-500+)")
         print("   - main_pollutant (PM2.5, PM10, Ozone, etc.)")
         print("   - aqi_level (Good, Moderate, Unhealthy, etc.)")
+        
+        return True
     
     def _extend_database_schema(self, config_dict):
         """Add AirVisual fields to database schema using proper WeeWX methods."""
@@ -107,9 +120,6 @@ class AirVisualInstaller(object):
                 self._add_missing_fields(config_dict, db_binding, missing_fields)
             else:
                 print("\n✓ All required fields already exist in database")
-            
-            # Add unit system mappings (always safe to do)
-            self._setup_unit_system()
             
             print("\n✓ Database schema management completed successfully")
             
@@ -243,8 +253,8 @@ class AirVisualInstaller(object):
         except Exception as e:
             print(f"  Warning: Could not setup unit system: {e}")
     
-    def _configure_service(self, config_dict, engine):
-        """Configure the AirVisual service settings."""
+    def _configure_service_interactive(self, config_dict):
+        """Configure the AirVisual service settings interactively."""
         print("\n" + "="*60)
         print("SERVICE CONFIGURATION")
         print("="*60)
@@ -256,66 +266,18 @@ class AirVisualInstaller(object):
         # Get update interval from user  
         interval = self._prompt_for_interval()
         
-        # Create service configuration section
-        config_dict['AirVisualService'] = {
-            'enable': True,
+        # Update the config dictionary
+        if 'AirVisualService' not in config_dict:
+            config_dict['AirVisualService'] = {}
+            
+        config_dict['AirVisualService'].update({
             'api_key': api_key,
-            'interval': interval,
-            'timeout': 30,
-            'log_success': False,
-            'log_errors': True,
-            'retry_wait_base': 600,      # Start with 10 minutes
-            'retry_wait_max': 21600,     # Max 6 hours between retries
-            'retry_multiplier': 2.0      # Double wait time each failure
-        }
+            'interval': interval
+        })
         
         print(f"  ✓ API key configured")
         print(f"  ✓ Update interval: {interval} seconds ({interval//60} minutes)")
         print(f"  ✓ Retry logic: exponential backoff with indefinite retries")
-    
-    def _register_service(self, config_dict):
-        """Register AirVisual service in the WeeWX engine."""
-        print("\n" + "="*60)
-        print("SERVICE REGISTRATION")
-        print("="*60)
-        print("Registering service in WeeWX engine...")
-        
-        # Ensure Engine section exists
-        if 'Engine' not in config_dict:
-            config_dict['Engine'] = {}
-        if 'Services' not in config_dict['Engine']:
-            config_dict['Engine']['Services'] = {}
-        
-        # Get current data_services list
-        services = config_dict['Engine']['Services']
-        current_data_services = services.get('data_services', '')
-        
-        # Convert to list for manipulation
-        if isinstance(current_data_services, str):
-            data_services_list = [s.strip() for s in current_data_services.split(',') if s.strip()]
-        else:
-            data_services_list = list(current_data_services) if current_data_services else []
-        
-        # Add our service if not already present
-        airvisual_service = 'user.airvisual.AirVisualService'
-        if airvisual_service not in data_services_list:
-            # Insert after StdConvert but before StdQC for proper data flow
-            insert_position = len(data_services_list)  # Default to end
-            for i, service in enumerate(data_services_list):
-                if 'StdConvert' in service:
-                    insert_position = i + 1
-                    break
-                elif 'StdQC' in service:
-                    insert_position = i
-                    break
-            
-            data_services_list.insert(insert_position, airvisual_service)
-            
-            # Update configuration
-            services['data_services'] = ', '.join(data_services_list)
-            print(f"  ✓ Added {airvisual_service} to data_services")
-        else:
-            print(f"  ✓ {airvisual_service} already registered")
     
     def _prompt_for_api_key(self):
         """Prompt user for IQ Air API key."""
@@ -409,17 +371,15 @@ def main():
                 }
             })
     
-    # Get extension metadata
     installer = loader()
     engine = MockEngine()
     
     try:
-        installer.install(engine)
+        installer.configure(engine)
         print("\n" + "="*60)
         print("TEST INSTALLATION COMPLETED SUCCESSFULLY!")
         print("="*60)
         print("Final configuration:")
-        print(f"  Services: {engine.config_dict['Engine']['Services']['data_services']}")
         if 'AirVisualService' in engine.config_dict:
             print(f"  API Key: {engine.config_dict['AirVisualService']['api_key']}")
             print(f"  Interval: {engine.config_dict['AirVisualService']['interval']} seconds")
