@@ -51,6 +51,11 @@ class AirVisualInstaller(ExtensionInstaller):
                     'retry_wait_base': 600,
                     'retry_wait_max': 21600,
                     'retry_multiplier': 2.0
+                },
+                'Engine': {
+                    'Services': {
+                        'data_services': 'user.airvisual.AirVisualService'
+                    }
                 }
             }
         )
@@ -74,9 +79,6 @@ class AirVisualInstaller(ExtensionInstaller):
         # Configure the service interactively
         self._configure_service_interactive(config_dict)
         
-        # Register service in Engine services
-        self._register_service(config_dict)
-        
         # Setup unit system
         self._setup_unit_system()
         
@@ -91,6 +93,16 @@ class AirVisualInstaller(ExtensionInstaller):
         print("   - aqi (Air Quality Index 0-500+)")
         print("   - main_pollutant (PM2.5, PM10, Ozone, etc.)")
         print("   - aqi_level (Good, Moderate, Unhealthy, etc.)")
+        
+        return True
+    
+    def uninstall(self):
+        """Uninstall the AirVisual extension."""
+        print(f"Uninstalling {EXTENSION_NAME} extension")
+        print("Removing service from Engine configuration...")
+        
+        # Note: This method is called automatically by weectl extension uninstall
+        # We need to manually remove the service since we added it manually
         
         return True
     
