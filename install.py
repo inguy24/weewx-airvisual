@@ -202,7 +202,7 @@ class AirVisualInstaller(ExtensionInstaller):
             except subprocess.TimeoutExpired:
                 raise Exception(f"Timeout adding field '{field_name}' - database may be locked")
             except Exception as e:
-                raise Exception(f"Error adding field '{field_name}': {e}"):
+                raise Exception(f"Error adding field '{field_name}': {e}")
                 # Run weectl database add-column command
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
                 
