@@ -288,15 +288,14 @@ class AirVisualInstaller(ExtensionInstaller):
         print("="*60)
         print("Registering service in WeeWX engine...")
         
-        # Ensure Engine section exists
-        if 'Engine' not in config_dict:
-            config_dict['Engine'] = {}
-        if 'Services' not in config_dict['Engine']:
-            config_dict['Engine']['Services'] = {}
-        
-        # Get current data_services list
-        services = config_dict['Engine']['Services']
-        current_data_services = services.get('data_services', '')
+        # Get current data_services list - DO NOT create new Engine section
+        try:
+            current_data_services = config_dict['Engine']['Services']['data_services']
+        except KeyError:
+            print("❌ Error: Could not find existing Engine/Services configuration")
+            print("Manual configuration required - add this to your data_services:")
+            print("   user.airvisual.AirVisualService")
+            return
         
         # Convert to list for manipulation
         if isinstance(current_data_services, str):
@@ -307,12 +306,13 @@ class AirVisualInstaller(ExtensionInstaller):
         # Add our service if not already present
         airvisual_service = 'user.airvisual.AirVisualService'
         if airvisual_service not in data_services_list:
-            # Add to the end of data_services list
+            # Add to the end of existing data_services list
             data_services_list.append(airvisual_service)
             
-            # Update configuration
-            services['data_services'] = ', '.join(data_services_list)
-            print(f"  ✓ Added {airvisual_service} to data_services")
+            # Update ONLY the data_services line - preserve everything else
+            config_dict['Engine']['Services']['data_services'] = ', '.join(data_services_list)
+            print(f"  ✓ Added {airvisual_service} to existing data_services")
+            print(f"  ✓ Preserved all other Engine configuration")
         else:
             print(f"  ✓ {airvisual_service} already registered")
     
