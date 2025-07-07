@@ -300,8 +300,10 @@ class AirVisualInstaller(ExtensionInstaller):
         # Convert to list for manipulation
         if isinstance(current_data_services, str):
             data_services_list = [s.strip() for s in current_data_services.split(',') if s.strip()]
+        elif isinstance(current_data_services, list):
+            data_services_list = [str(s).strip() for s in current_data_services if str(s).strip()]
         else:
-            data_services_list = list(current_data_services) if current_data_services else []
+            data_services_list = []
         
         # Add our service if not already present
         airvisual_service = 'user.airvisual.AirVisualService'
@@ -309,8 +311,8 @@ class AirVisualInstaller(ExtensionInstaller):
             # Add to the end of existing data_services list
             data_services_list.append(airvisual_service)
             
-            # Update ONLY the data_services line - preserve everything else
-            config_dict['Engine']['Services']['data_services'] = ', '.join(data_services_list)
+            # Update ONLY the data_services line - NO QUOTES, preserve everything else
+            config_dict['Engine']['Services']['data_services'] = data_services_list
             print(f"  ✓ Added {airvisual_service} to existing data_services")
             print(f"  ✓ Preserved all other Engine configuration")
         else:
