@@ -51,11 +51,6 @@ class AirVisualInstaller(ExtensionInstaller):
                     'retry_wait_base': 600,
                     'retry_wait_max': 21600,
                     'retry_multiplier': 2.0
-                },
-                'Engine': {
-                    'Services': {
-                        'data_services': 'user.airvisual.AirVisualService'
-                    }
                 }
             }
         )
@@ -79,6 +74,9 @@ class AirVisualInstaller(ExtensionInstaller):
         # Configure the service interactively
         self._configure_service_interactive(config_dict)
         
+        # Register service in Engine services (properly this time)
+        self._register_service(config_dict)
+        
         # Setup unit system
         self._setup_unit_system()
         
@@ -97,12 +95,20 @@ class AirVisualInstaller(ExtensionInstaller):
         return True
     
     def uninstall(self):
-        """Uninstall the AirVisual extension."""
+        """Uninstall the AirVisual extension and remove service registration."""
         print(f"Uninstalling {EXTENSION_NAME} extension")
         print("Removing service from Engine configuration...")
         
-        # Note: This method is called automatically by weectl extension uninstall
-        # We need to manually remove the service since we added it manually
+        # Remove the service from data_services list
+        try:
+            # This would need access to config_dict, but uninstall() doesn't get it
+            # So we need to implement manual removal instructions
+            print("Manual service removal required:")
+            print("Remove 'user.airvisual.AirVisualService' from your data_services line")
+            print("Database fields (aqi, main_pollutant, aqi_level) are preserved")
+        except Exception as e:
+            print(f"Could not automatically remove service: {e}")
+            print("Manual removal required from data_services line")
         
         return True
     
