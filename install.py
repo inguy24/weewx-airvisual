@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 
 """
-WeeWX AirVisual Extension Installer - CORRECTED for WeeWX 5.1
+WeeWX AirVisual Extension Installer - Fixed for MariaDB VARCHAR Fields
 
 This installer sets up the AirVisual service extension for WeeWX,
 including database schema updates, configuration modifications,
 and service registration with proper database field management.
 
-Uses proper WeeWX ExtensionInstaller base class with configure method.
+Key Fix:
+- Uses weectl for REAL/INTEGER fields (supported)
+- Uses direct SQL through WeeWX database manager for VARCHAR fields (weectl limitation)
+- Ensures proper field types on both SQLite and MariaDB/MySQL
 """
 
 import configobj
@@ -16,7 +19,6 @@ import sys
 import subprocess
 import weewx.manager
 import weedb
-from weecfg.extension import ExtensionInstaller
 
 # WeeWX extension info
 EXTENSION_NAME = 'AirVisual'
@@ -24,45 +26,20 @@ EXTENSION_VERSION = '1.0.0'
 EXTENSION_DESCRIPTION = 'Air quality data from IQ Air AirVisual API'
 
 def loader():
-    """Return installer object."""
     return AirVisualInstaller()
 
-class AirVisualInstaller(ExtensionInstaller):
+class AirVisualInstaller(object):
     """WeeWX extension installer for AirVisual service with proper database management."""
     
     def __init__(self):
-        super(AirVisualInstaller, self).__init__(
-            version=EXTENSION_VERSION,
-            name=EXTENSION_NAME,
-            description=EXTENSION_DESCRIPTION,
-            author="WeeWX Community",
-            author_email="",
-            files=[
-                ('bin/user', ['bin/user/airvisual.py'])
-            ],
-            config={
-                'AirVisualService': {
-                    'enable': True,
-                    'api_key': 'REPLACE_ME',
-                    'interval': 600,
-                    'timeout': 30,
-                    'log_success': False,
-                    'log_errors': True,
-                    'retry_wait_base': 600,
-                    'retry_wait_max': 21600,
-                    'retry_multiplier': 2.0
-                }
-            }
-        )
-        
         self.required_fields = {
             'aqi': 'REAL',
-            'main_pollutant': 'TEXT', 
-            'aqi_level': 'TEXT'
+            'main_pollutant': 'VARCHAR(10)', 
+            'aqi_level': 'VARCHAR(30)'
         }
     
-    def configure(self, engine):
-        """Configure the extension during installation."""
+    def install(self, engine):
+        """Install the AirVisual extension."""
         print(f"Installing {EXTENSION_NAME} extension v{EXTENSION_VERSION}")
         
         # Get configuration
@@ -71,46 +48,23 @@ class AirVisualInstaller(ExtensionInstaller):
         # Check and add database schema fields
         self._extend_database_schema(config_dict)
         
-        # Configure the service interactively
-        self._configure_service_interactive(config_dict)
+        # Configure the service
+        self._configure_service(config_dict, engine)
         
-        # Register service in Engine services (properly this time)
+        # Register service in engine
         self._register_service(config_dict)
         
-        # Setup unit system
-        self._setup_unit_system()
-        
         print("\n" + "="*60)
-        print("AirVisual extension configured successfully!")
+        print("AirVisual extension installed successfully!")
         print("="*60)
         print("\nIMPORTANT: You must restart WeeWX for changes to take effect.")
         print("   sudo systemctl restart weewx")
         print("\nThe extension will read your station coordinates from [Station]")
-        print("and collect air quality data according to your configured interval.")
+        print("and collect air quality data every 10 minutes by default.")
         print("\nNew database fields available:")
         print("   - aqi (Air Quality Index 0-500+)")
         print("   - main_pollutant (PM2.5, PM10, Ozone, etc.)")
         print("   - aqi_level (Good, Moderate, Unhealthy, etc.)")
-        
-        return True
-    
-    def uninstall(self):
-        """Uninstall the AirVisual extension and remove service registration."""
-        print(f"Uninstalling {EXTENSION_NAME} extension")
-        print("Removing service from Engine configuration...")
-        
-        # Remove the service from data_services list
-        try:
-            # This would need access to config_dict, but uninstall() doesn't get it
-            # So we need to implement manual removal instructions
-            print("Manual service removal required:")
-            print("Remove 'user.airvisual.AirVisualService' from your data_services line")
-            print("Database fields (aqi, main_pollutant, aqi_level) are preserved")
-        except Exception as e:
-            print(f"Could not automatically remove service: {e}")
-            print("Manual removal required from data_services line")
-        
-        return True
     
     def _extend_database_schema(self, config_dict):
         """Add AirVisual fields to database schema using proper WeeWX methods."""
@@ -137,14 +91,22 @@ class AirVisualInstaller(ExtensionInstaller):
             else:
                 print("\n✓ All required fields already exist in database")
             
+            # Add unit system mappings (always safe to do)
+            self._setup_unit_system()
+            
             print("\n✓ Database schema management completed successfully")
             
         except Exception as e:
             print(f"\n❌ Error during database schema management: {e}")
             print("Installation will continue, but you may need to manually add database fields:")
+            print("Manual commands for MariaDB/MySQL:")
+            print("   mysql -u weewx -p weewx -e \"ALTER TABLE archive ADD COLUMN aqi DOUBLE;\"")
+            print("   mysql -u weewx -p weewx -e \"ALTER TABLE archive ADD COLUMN main_pollutant VARCHAR(10);\"")
+            print("   mysql -u weewx -p weewx -e \"ALTER TABLE archive ADD COLUMN aqi_level VARCHAR(30);\"")
+            print("Manual commands for SQLite:")
             print("   weectl database add-column aqi --type 'REAL'")
-            print("   weectl database add-column main_pollutant")
-            print("   weectl database add-column aqi_level")
+            print("   weectl database add-column main_pollutant --type 'TEXT'")
+            print("   weectl database add-column aqi_level --type 'TEXT'")
     
     def _check_existing_fields(self, config_dict, db_binding):
         """Check which required fields already exist in the database."""
@@ -174,12 +136,17 @@ class AirVisualInstaller(ExtensionInstaller):
         return existing_fields, missing_fields
     
     def _add_missing_fields(self, config_dict, db_binding, missing_fields):
-        """Add missing fields to the database using weectl database add-column."""
+        """Add missing fields using appropriate method for each field type."""
         
         # Find weectl executable
         weectl_path = self._find_weectl()
         if not weectl_path:
-            raise Exception("Could not find weectl executable. Please add fields manually.")
+            print("  weectl not found - using direct SQL for all fields")
+            # Fall back to direct SQL for all fields
+            for field_name in missing_fields:
+                field_type = self.required_fields[field_name]
+                self._add_field_direct_sql(config_dict, db_binding, field_name, field_type)
+            return
         
         # Get config file path
         config_path = getattr(config_dict, 'filename', '/etc/weewx/weewx.conf')
@@ -189,37 +156,65 @@ class AirVisualInstaller(ExtensionInstaller):
             
             print(f"  Adding field '{field_name}' ({field_type})...")
             
-            # Build weectl command - only add --type for REAL/INTEGER
+            # Use weectl for supported types, direct SQL for VARCHAR
+            if field_type in ['REAL', 'INTEGER', 'real', 'integer', 'int']:
+                # Use weectl for numeric types (confirmed supported)
+                self._add_field_with_weectl(weectl_path, config_path, db_binding, field_name, field_type)
+            else:
+                # Use direct SQL for VARCHAR/TEXT types (weectl limitation workaround)
+                print(f"    Using direct SQL (weectl doesn't support VARCHAR)")
+                self._add_field_direct_sql(config_dict, db_binding, field_name, field_type)
+    
+    def _add_field_with_weectl(self, weectl_path, config_path, db_binding, field_name, field_type):
+        """Add field using weectl database add-column command."""
+        try:
+            # Build weectl command for supported field types
             cmd = [
                 weectl_path, 'database', 'add-column', field_name,
+                '--type', field_type,
                 '--config', config_path,
                 '--binding', db_binding,
                 '-y'  # Don't prompt for confirmation
             ]
             
-            # Only add --type for supported command-line types
-            if field_type in ['REAL', 'INTEGER', 'real', 'integer', 'int']:
-                cmd.insert(-3, '--type')  # Insert before --config
-                cmd.insert(-3, field_type)
+            # Run weectl database add-column command
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
             
-            try:
-                # Run weectl database add-column command
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-                
-                if result.returncode == 0:
-                    print(f"    ✓ Successfully added '{field_name}'")
+            if result.returncode == 0:
+                print(f"    ✓ Successfully added '{field_name}' using weectl")
+            else:
+                # Check if error is due to field already existing
+                if 'duplicate column' in result.stderr.lower() or 'already exists' in result.stderr.lower():
+                    print(f"    ✓ Field '{field_name}' already exists")
                 else:
-                    # Check if error is due to field already existing
-                    if 'duplicate column' in result.stderr.lower() or 'already exists' in result.stderr.lower():
-                        print(f"    ✓ Field '{field_name}' already exists")
-                    else:
-                        print(f"    ❌ Failed to add '{field_name}': {result.stderr.strip()}")
-                        raise Exception(f"weectl command failed: {result.stderr}")
-                        
-            except subprocess.TimeoutExpired:
-                raise Exception(f"Timeout adding field '{field_name}' - database may be locked")
-            except Exception as e:
-                raise Exception(f"Error adding field '{field_name}': {e}")
+                    print(f"    ❌ weectl failed: {result.stderr.strip()}")
+                    # Fall back to direct SQL
+                    print(f"    Trying direct SQL fallback...")
+                    field_type_sql = 'DOUBLE' if field_type == 'REAL' else field_type
+                    self._add_field_direct_sql_by_binding(db_binding, field_name, field_type_sql)
+                    
+        except subprocess.TimeoutExpired:
+            print(f"    ❌ Timeout adding field '{field_name}' with weectl")
+            raise Exception(f"weectl command timed out")
+        except Exception as e:
+            print(f"    ❌ Error with weectl: {e}")
+            raise Exception(f"weectl command failed: {e}")
+    
+    def _add_field_direct_sql(self, config_dict, db_binding, field_name, field_type):
+        """Add field using direct SQL through WeeWX database manager."""
+        try:
+            with weewx.manager.open_manager_with_config(config_dict, db_binding) as dbmanager:
+                # Use generic SQL compatible with both SQLite and MySQL
+                sql = f"ALTER TABLE archive ADD COLUMN {field_name} {field_type}"
+                dbmanager.connection.execute(sql)
+                print(f"    ✓ Successfully added '{field_name}' using direct SQL")
+        except Exception as e:
+            error_msg = str(e).lower()
+            if 'duplicate column' in error_msg or 'already exists' in error_msg:
+                print(f"    ✓ Field '{field_name}' already exists")
+            else:
+                print(f"    ❌ Failed to add '{field_name}': {e}")
+                raise Exception(f"Direct SQL field creation failed: {e}")
     
     def _find_weectl(self):
         """Find the weectl executable."""
@@ -273,8 +268,8 @@ class AirVisualInstaller(ExtensionInstaller):
         except Exception as e:
             print(f"  Warning: Could not setup unit system: {e}")
     
-    def _configure_service_interactive(self, config_dict):
-        """Configure the AirVisual service settings interactively."""
+    def _configure_service(self, config_dict, engine):
+        """Configure the AirVisual service settings."""
         print("\n" + "="*60)
         print("SERVICE CONFIGURATION")
         print("="*60)
@@ -286,14 +281,18 @@ class AirVisualInstaller(ExtensionInstaller):
         # Get update interval from user  
         interval = self._prompt_for_interval()
         
-        # Update the config dictionary
-        if 'AirVisualService' not in config_dict:
-            config_dict['AirVisualService'] = {}
-            
-        config_dict['AirVisualService'].update({
+        # Create service configuration section
+        config_dict['AirVisualService'] = {
+            'enable': True,
             'api_key': api_key,
-            'interval': interval
-        })
+            'interval': interval,
+            'timeout': 30,
+            'log_success': False,
+            'log_errors': True,
+            'retry_wait_base': 600,      # Start with 10 minutes
+            'retry_wait_max': 21600,     # Max 6 hours between retries
+            'retry_multiplier': 2.0      # Double wait time each failure
+        }
         
         print(f"  ✓ API key configured")
         print(f"  ✓ Update interval: {interval} seconds ({interval//60} minutes)")
@@ -306,49 +305,40 @@ class AirVisualInstaller(ExtensionInstaller):
         print("="*60)
         print("Registering service in WeeWX engine...")
         
-        # Safely check for Engine configuration existence
+        # Ensure Engine section exists
         if 'Engine' not in config_dict:
-            print("❌ Error: No Engine section found in configuration")
-            print("Manual configuration required - add to your data_services:")
-            print("   user.airvisual.AirVisualService")
-            return
-            
+            config_dict['Engine'] = {}
         if 'Services' not in config_dict['Engine']:
-            print("❌ Error: No Services section found in Engine configuration")
-            print("Manual configuration required - add to your data_services:")
-            print("   user.airvisual.AirVisualService")
-            return
-            
-        if 'data_services' not in config_dict['Engine']['Services']:
-            print("❌ Error: No data_services found in Engine/Services configuration")
-            print("Manual configuration required - add to your data_services:")
-            print("   user.airvisual.AirVisualService")
-            return
+            config_dict['Engine']['Services'] = {}
         
-        # Get current data_services safely
-        current_data_services = config_dict['Engine']['Services']['data_services']
+        # Get current data_services list
+        services = config_dict['Engine']['Services']
+        current_data_services = services.get('data_services', '')
         
         # Convert to list for manipulation
         if isinstance(current_data_services, str):
             data_services_list = [s.strip() for s in current_data_services.split(',') if s.strip()]
-        elif isinstance(current_data_services, list):
-            data_services_list = [str(s).strip() for s in current_data_services if str(s).strip()]
         else:
-            print(f"❌ Error: Unexpected data_services type: {type(current_data_services)}")
-            print("Manual configuration required - add to your data_services:")
-            print("   user.airvisual.AirVisualService")
-            return
+            data_services_list = list(current_data_services) if current_data_services else []
         
         # Add our service if not already present
         airvisual_service = 'user.airvisual.AirVisualService'
         if airvisual_service not in data_services_list:
-            # Add to the end of existing data_services list
-            data_services_list.append(airvisual_service)
+            # Insert after StdConvert but before StdQC for proper data flow
+            insert_position = len(data_services_list)  # Default to end
+            for i, service in enumerate(data_services_list):
+                if 'StdConvert' in service:
+                    insert_position = i + 1
+                    break
+                elif 'StdQC' in service:
+                    insert_position = i
+                    break
             
-            # Update ONLY the data_services line - assign as list, let ConfigObj format it
-            config_dict['Engine']['Services']['data_services'] = data_services_list
-            print(f"  ✓ Added {airvisual_service} to existing data_services")
-            print(f"  ✓ Preserved all other Engine configuration")
+            data_services_list.insert(insert_position, airvisual_service)
+            
+            # Update configuration
+            services['data_services'] = ', '.join(data_services_list)
+            print(f"  ✓ Added {airvisual_service} to data_services")
         else:
             print(f"  ✓ {airvisual_service} already registered")
     
@@ -444,15 +434,16 @@ def main():
                 }
             })
     
-    installer = loader()
+    installer = AirVisualInstaller()
     engine = MockEngine()
     
     try:
-        installer.configure(engine)
+        installer.install(engine)
         print("\n" + "="*60)
         print("TEST INSTALLATION COMPLETED SUCCESSFULLY!")
         print("="*60)
         print("Final configuration:")
+        print(f"  Services: {engine.config_dict['Engine']['Services']['data_services']}")
         if 'AirVisualService' in engine.config_dict:
             print(f"  API Key: {engine.config_dict['AirVisualService']['api_key']}")
             print(f"  Interval: {engine.config_dict['AirVisualService']['interval']} seconds")
