@@ -306,14 +306,27 @@ class AirVisualInstaller(ExtensionInstaller):
         print("="*60)
         print("Registering service in WeeWX engine...")
         
-        # Get current data_services list - DO NOT create new Engine section
-        try:
-            current_data_services = config_dict['Engine']['Services']['data_services']
-        except KeyError:
-            print("❌ Error: Could not find existing Engine/Services configuration")
-            print("Manual configuration required - add this to your data_services:")
+        # Safely check for Engine configuration existence
+        if 'Engine' not in config_dict:
+            print("❌ Error: No Engine section found in configuration")
+            print("Manual configuration required - add to your data_services:")
             print("   user.airvisual.AirVisualService")
             return
+            
+        if 'Services' not in config_dict['Engine']:
+            print("❌ Error: No Services section found in Engine configuration")
+            print("Manual configuration required - add to your data_services:")
+            print("   user.airvisual.AirVisualService")
+            return
+            
+        if 'data_services' not in config_dict['Engine']['Services']:
+            print("❌ Error: No data_services found in Engine/Services configuration")
+            print("Manual configuration required - add to your data_services:")
+            print("   user.airvisual.AirVisualService")
+            return
+        
+        # Get current data_services safely
+        current_data_services = config_dict['Engine']['Services']['data_services']
         
         # Convert to list for manipulation
         if isinstance(current_data_services, str):
@@ -321,7 +334,10 @@ class AirVisualInstaller(ExtensionInstaller):
         elif isinstance(current_data_services, list):
             data_services_list = [str(s).strip() for s in current_data_services if str(s).strip()]
         else:
-            data_services_list = []
+            print(f"❌ Error: Unexpected data_services type: {type(current_data_services)}")
+            print("Manual configuration required - add to your data_services:")
+            print("   user.airvisual.AirVisualService")
+            return
         
         # Add our service if not already present
         airvisual_service = 'user.airvisual.AirVisualService'
@@ -329,7 +345,7 @@ class AirVisualInstaller(ExtensionInstaller):
             # Add to the end of existing data_services list
             data_services_list.append(airvisual_service)
             
-            # Update ONLY the data_services line - NO QUOTES, preserve everything else
+            # Update ONLY the data_services line - assign as list, let ConfigObj format it
             config_dict['Engine']['Services']['data_services'] = data_services_list
             print(f"  ✓ Added {airvisual_service} to existing data_services")
             print(f"  ✓ Preserved all other Engine configuration")
